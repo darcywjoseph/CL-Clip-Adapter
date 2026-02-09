@@ -1,0 +1,29 @@
+[project]
+name = "cl-clip-adapter"
+version = "0.1.0"
+description = "poetry env required to run cl-clip-adapter"
+authors = [
+    {name = "Darcy Joseph",email = "darcywjoseph@gmail.com"}
+]
+license = {text = "n"}
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch (==2.7.0)",
+    "numpy (>=2.2.0,<2.3.0)",
+    "matplotlib (>=3.10.7,<4.0.0)",
+    "pillow (>=12.1.0,<13.0.0)",
+    "clip (>=0.2.0,<0.3.0)",
+]
+
+[tool.poetry]
+package-mode = false
+
+[[tool.poetry.source]]
+name = "torch_cuda_source"
+url = "https://download.pytorch.org/whl/cu126"
+priority = "supplemental"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
