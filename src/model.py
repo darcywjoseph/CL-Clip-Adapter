@@ -30,7 +30,7 @@ class Adapter(nn.Module):
 
         with torch.no_grad():
             features = self.clip_model.encode_image(x).float()
-            
+        #TODO: Maybe add a residual connection here. 
         features = self.adapter(features)
         logits = self.classifier(features)
         
