@@ -1,8 +1,6 @@
 import torch 
 import torch.nn as nn
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
 class Adapter(nn.Module):
     """
     A trainable adapter on top of a frozen CLIP encoder.

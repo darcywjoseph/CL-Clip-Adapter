@@ -26,7 +26,7 @@ def contrastive_loss(features, labels, temperature=0.07):
 def train_single_epoch(loader, 
                        model, 
                        optimizer, 
-                       use_contrastive=False, 
+                       use_contrastive=True, 
                        w=0.5, device="cuda"):
     
     model.train()
@@ -36,7 +36,7 @@ def train_single_epoch(loader,
     for images, labels in tqdm(loader):
 
         images = images.to(device)
-        labels = images.to(device)
+        labels = labels.to(device)
 
         features, logits = model(images)
 
