@@ -9,11 +9,12 @@ license = {text = "n"}
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "torch (==2.7.0)",
-    "numpy (>=2.2.0,<2.3.0)",
-    "matplotlib (>=3.10.7,<4.0.0)",
-    "pillow (>=12.1.0,<13.0.0)",
-    "clip (>=0.2.0,<0.3.0)",
+    "torch",
+    "numpy",
+    "matplotlib ",
+    "pillow",
+    "setuptools ",
+    "open-clip-torch (>=3.2.0,<4.0.0)",
 ]
 
 [tool.poetry]
