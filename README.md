@@ -1,6 +1,18 @@
 # CL-Clip-Adapter
 Code relating to the implementation of a continual learning adapter for pretrain CLIP.
 
+```bash
+├── README.md
+├── src
+│   ├── dataset.py
+│   ├── experiments.py
+│   ├── model.py
+│   └── train.py
+├── pyproject.toml
+├── poetry.lock
+└── .gitignore
+```
+
 ## Set Up Environment
 
 Install Poetry with pipx
