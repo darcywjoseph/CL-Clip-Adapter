@@ -33,3 +33,8 @@ Incase of failure, add depencies via:
 ```bash
 poetry add <package-name>
 ```
+## Set Up ShapesAndColours dataset
+
+```bash
+python src/dataset.py
+```
