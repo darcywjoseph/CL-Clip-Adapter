@@ -2,10 +2,11 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-from typing import Optional
+from typing import Optional, Any
 
 from model import Adapter
 
@@ -142,3 +143,66 @@ def train_single_epoch(
 
     return total_loss / total_samples
     
+
+def build_optimizer(cfg: Any, model: Adapter) -> optim.Optimizer:
+    params = []
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+        # Optionally freeze adapter layers to train only head
+        if (not cfg.train_adapter) and ("classifier" not in name):
+            continue
+        params.append(p)
+
+    return optim.AdamW(params, lr=cfg.lr, weight_decay=cfg.weight_decay)
+
+
+def train_task_iters(
+        cfg: Any,
+        model: Adapter,
+        train_loader: DataLoader,
+        device: str,
+        use_contrastive: bool = True,
+        w: float = 0.5,
+    ) -> float:
+
+    model.train()
+    opt = build_optimizer(cfg, model)
+
+    total_loss = 0.0
+    total_steps = 0
+
+    loader_iter = iter(train_loader)
+
+    while total_steps < cfg.iters_per_task:
+
+        try:
+            images, labels = next(loader_iter)
+        except StopIteration:
+            loader_iter = iter(train_loader)
+            images, labels = next(loader_iter)
+
+        images = images.to(device)
+        labels = labels.to(device)
+
+        features, logits = model(images)
+
+        classif_loss = F.cross_entropy(logits, labels)
+
+        if use_contrastive:
+            contr_loss = contrastive_loss(features, labels)
+            loss = classif_loss + w * contr_loss
+        else:
+            loss = classif_loss
+
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+
+        total_loss += loss.item()
+        total_steps += 1
+
+        if (total_steps) % 200 == 0:
+            print(f"    step {total_steps}/{cfg.iters_per_task} | loss {total_loss/max(1, total_steps):.4f}")
+
+    return total_loss / max(1, cfg.iters_per_task)
