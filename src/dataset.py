@@ -13,6 +13,7 @@ class ShapesAndColours(Dataset):
             i.e. class 0 is green squares; class 1 is red circles
     Task 2 - Shape becomes non-discrminiative with colour being the sole discrminant feature. 
             i.e. class 0 is green; class 1 is red
+    Task 3 - Shape becomes discriminat feature, colour is non discriminate
     """
 
     def __init__(self, task_id, transform = None, num_samples=500):
@@ -25,12 +26,17 @@ class ShapesAndColours(Dataset):
 
             label = np.random.randint(0,2)
 
-            if label == 0:
-                colour = (0,255,0) #green
+            if self.task_id == 1 or self.task_id == 2:
+                if label == 0:
+                    colour = (0,255,0) #green
+                else:
+                    colour = (255,0,0) # red      
+            elif self.task_id == 3:
+                colour = (0,255,0)
             else:
-                colour = (255,0,0) # red
+                raise ValueError(f"Invalid task id: {self.task_id}")
 
-            if self.task_id == 1:
+            if self.task_id == 1 or self.task_id == 3:
                 is_square = (label == 0)
             elif self.task_id == 2:
                 is_square = (np.random.rand() > 0.5)
@@ -78,3 +84,6 @@ if __name__ == "__main__":
 
     dataset_task_2 = ShapesAndColours(task_id=2,transform=None,num_samples=500)
     dataset_task_2.save_dataset()
+
+    dataset_task_3 = ShapesAndColours(task_id=3,transform=None,num_samples=500)
+    dataset_task_3.save_dataset()

@@ -105,6 +105,12 @@ def run_basic_experiment(cfg):
     print(f"Task1 accuracy after Task2: {t1_after_t2:.4f}")
     print(f"Difference in task 1 accuracy from before and after task 2 training: {accuracy_diff:.4f}")
 
+    # Check if model can classify based upon shape by testing on task 3
+    dataset_task_3_test = ShapesAndColours(task_id=3, transform=preprocessing, num_samples=cfg.num_samples_test)
+    data_loader_task3_test = DataLoader(dataset_task_3_test, batch_size=cfg.batch_size, shuffle=False)
+
+    t3_after_t2 = evaluate_model(clip_plus_adapter, data_loader_task3_test, device=cfg.device)["accuracy"]
+    print(f"Task3 accuracy after Task2: {t3_after_t2:.4f}")
 
 if __name__ == "__main__":
 
@@ -117,4 +123,4 @@ if __name__ == "__main__":
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
     )
 
-    run_experiment(cfg)
+    run_basic_experiment(cfg)
