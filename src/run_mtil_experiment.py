@@ -147,7 +147,6 @@ def main(cfg):
         acc_zs = evaluate_zeroshot_clip(
             clip_model=clip_model,
             tokenizer=tokenizer,
-            preprocess_eval=preprocess_eval,
             test_dataset=test_ds,
             classnames=classnames,
             device=cfg.device,
