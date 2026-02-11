@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import tqdm
+from tqdm import tqdm
 
 def contrastive_loss(features, labels, temperature=0.07):
 
@@ -43,8 +43,8 @@ def train_single_epoch(loader,
         classif_loss = F.cross_entropy(logits, labels)
 
         if use_contrastive:
-            contrastive_loss = contrastive_loss(features, labels)
-            loss = classif_loss + w * contrastive_loss
+            contr_loss = contrastive_loss(features, labels)
+            loss = classif_loss + w * contr_loss
         else:
             loss = classif_loss
 
