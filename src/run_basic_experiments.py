@@ -5,6 +5,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import open_clip
 import numpy as np
+import argparse
 from model import Adapter
 from dataset import ShapesAndColours
 from train import train_single_epoch, compute_fisher_diagonal
@@ -19,6 +20,7 @@ class ExperimentConfig:
     num_samples_train: int
     num_samples_test: int
     device: str
+    use_contrastive: bool = True
     use_ewc: bool = False
     ewc_lambda: float = 10.0
     fisher_sample_size: int = 200
@@ -108,7 +110,12 @@ def run_basic_experiment(cfg: ExperimentConfig):
 
     print("Trainig Task 1...")
     for epoch in range(cfg.training_epochs):
-        train_loss = train_single_epoch(data_loader_task1_train, clip_plus_adapter, optimizer)
+        train_loss = train_single_epoch(
+            data_loader_task1_train, 
+            clip_plus_adapter, optimizer, 
+            use_contrastive=cfg.use_contrastive,
+            device=cfg.device
+            )
         print(f"epoch {epoch+1}/{cfg.training_epochs} loss: {train_loss:.4f}")
 
 
@@ -135,6 +142,8 @@ def run_basic_experiment(cfg: ExperimentConfig):
             data_loader_task2_train, 
             clip_plus_adapter, 
             optimizer, 
+            use_contrastive=cfg.use_contrastive,
+            device=cfg.device,
             ewc_mean=ewc_mean,
             ewc_fisher=ewc_fisher,
             ewc_lambda=cfg.ewc_lambda
@@ -161,6 +170,13 @@ def run_basic_experiment(cfg: ExperimentConfig):
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--use_contrastive", action="store_true")
+    parser.add_argument("--use_ewc", action="store_true")
+
+    args = parser.parse_args()
+
     cfg = ExperimentConfig(
         training_epochs=3,
         learning_rate=1e-3,
@@ -168,7 +184,8 @@ if __name__ == "__main__":
         num_samples_train=500,
         num_samples_test=50,
         device = 'cuda' if torch.cuda.is_available() else 'cpu',
-        use_ewc = False,
+        use_contrastive=args.use_contrastive,
+        use_ewc=args.use_ewc,
         ewc_lambda = 10.0,
         fisher_sample_size = 200,
     )
