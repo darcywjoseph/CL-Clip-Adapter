@@ -54,7 +54,26 @@ def evaluate_model(model, data_loader, device):
            
 
 def run_basic_experiment(cfg):
-    
+    """
+    Runs basic experiment on the ShapesAndColours dataset
+    using a frozen CLIP backbone with a trainable adapter.
+
+    Experiment tests whether the model can adapt to a task shift
+    where the discriminative feature changes across tasks. 
+    This is achieved via analysis across 3 tasks.
+
+    Task 1:
+        The model is trained to classify objects using either shape and colour.
+
+    Task 2:
+        The model is trained to classify when shape becomes non-discriminative
+        and colour is the only discriminative feature.
+
+    Task 3:
+        Used to evaluate whether the model
+        has retained the ability to discrminate based on shape after Task 2.
+    """
+        
     clip_model, _, preprocessing = open_clip.create_model_and_transforms(
         'ViT-B-16', 
         pretrained='openai', 
