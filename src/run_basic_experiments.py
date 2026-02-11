@@ -7,7 +7,7 @@ import open_clip
 import numpy as np
 from model import Adapter
 from dataset import ShapesAndColours
-from train import train_single_epoch
+from train import train_single_epoch, compute_fisher_diagonal
 
 CLIP_CACHE = "../clip_cache"
 
@@ -19,13 +19,16 @@ class ExperimentConfig:
     num_samples_train: int
     num_samples_test: int
     device: str
+    use_ewc: bool = False
+    ewc_lambda: float = 10.0
+    fisher_sample_size: int = 200
 
 def evaluate_model(
         model: Adapter, 
         data_loader: DataLoader, 
         device: Union[str, torch.device]
     ) -> dict[str, object]:
-    
+
     model.eval()
     total_correct = 0
     total_samples = 0
@@ -115,9 +118,27 @@ def run_basic_experiment(cfg: ExperimentConfig):
     t2_before_t2 = evaluate_model(clip_plus_adapter, data_loader_task2_test, device=cfg.device)["accuracy"]
     print(f"Task2 accuracy before Task2 training: {t2_before_t2:.4f}")
 
+    ewc_mean = None
+    ewc_fisher = None
+    if cfg.use_ewc:
+        print("Computing Fisher (EWC) after Task 1...")
+        ewc_mean, ewc_fisher = compute_fisher_diagonal(
+            model=clip_plus_adapter,
+            dataloader=data_loader_task1_train,
+            device=cfg.device,
+            fisher_sample_size=cfg.fisher_sample_size,
+        )
+
     print("Training Task 2...")
     for epoch in range(cfg.training_epochs):
-        train_loss = train_single_epoch(data_loader_task2_train, clip_plus_adapter, optimizer)
+        train_loss = train_single_epoch(
+            data_loader_task2_train, 
+            clip_plus_adapter, 
+            optimizer, 
+            ewc_mean=ewc_mean,
+            ewc_fisher=ewc_fisher,
+            ewc_lambda=cfg.ewc_lambda
+        )
         print(f"epoch {epoch+1}/{cfg.training_epochs} loss: {train_loss:.4f}")
 
     # Test model on task 2
@@ -146,7 +167,10 @@ if __name__ == "__main__":
         batch_size=32,
         num_samples_train=500,
         num_samples_test=50,
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        device = 'cuda' if torch.cuda.is_available() else 'cpu',
+        use_ewc = False,
+        ewc_lambda = 10.0,
+        fisher_sample_size = 200,
     )
 
     run_basic_experiment(cfg)

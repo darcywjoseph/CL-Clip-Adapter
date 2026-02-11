@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
+from typing import Optional
 
 from model import Adapter
 
@@ -28,6 +29,75 @@ def contrastive_loss(features: Tensor, labels: Tensor, temperature: float = 0.07
 
     return invariant_loss
     
+@torch.no_grad()
+def _snapshot_params(model: torch.nn.Module) -> dict[str, Tensor]:
+    """Clone current trainable parameters into a dict."""
+    return {n: p.detach().clone() for n, p in model.named_parameters() if p.requires_grad}
+
+def compute_fisher_diagonal(
+    model: torch.nn.Module,
+    dataloader,
+    device: str,
+    fisher_sample_size: int = 100,
+) -> tuple[dict[str, Tensor], dict[str, Tensor]]:
+    """
+    Compute diagonal Fisher information estimate for EWC.
+    """
+    model = model.to(device)
+    params = {n: p for n, p in model.named_parameters() if p.requires_grad}
+
+    mean = _snapshot_params(model)
+    fisher = {n: torch.zeros_like(p, device=device) for n, p in params.items()}
+
+    model.eval()
+    count = 0
+
+    for images, labels in dataloader:
+        if count >= fisher_sample_size:
+            break
+
+        images = images.to(device)
+        labels = labels.to(device)
+
+        model.zero_grad(set_to_none=True)
+        _, logits = model(images)
+
+        loss = F.cross_entropy(logits, labels)
+        loss.backward()
+
+        for n, p in params.items():
+
+            if p.grad is not None:
+                fisher[n] += p.grad.detach() ** 2
+
+        count += images.size(0)
+
+    if count == 0:
+        raise ValueError("0")
+
+    for n in fisher:
+        fisher[n] /= count
+
+    return mean, fisher
+
+
+def ewc_penalty(
+    model: torch.nn.Module,
+    mean: dict[str, Tensor],
+    fisher: dict[str, Tensor],
+) -> torch.Tensor:
+    """
+    Compute EWC quadratic penalty.
+    """
+    loss = torch.zeros((), device=next(model.parameters()).device)
+
+    for n, p in model.named_parameters():
+
+        if p.requires_grad and n in fisher:
+            loss = loss + (fisher[n] * (p - mean[n]) ** 2).sum()
+
+    return loss
+
 
 def train_single_epoch(
         loader: DataLoader, 
@@ -35,7 +105,10 @@ def train_single_epoch(
         optimizer: Optimizer, 
         use_contrastive: bool =True, 
         w:float=0.5, 
-        device: str="cuda"
+        device: str="cuda",
+        ewc_mean: Optional[dict[str, Tensor]] = None,
+        ewc_fisher: Optional[dict[str, Tensor]] = None,
+        ewc_lambda: float = 0.0,
     ) -> float:
 
     model.train()
@@ -56,6 +129,9 @@ def train_single_epoch(
             loss = classif_loss + w * contr_loss
         else:
             loss = classif_loss
+
+        if ewc_mean is not None and ewc_fisher is not None and ewc_lambda > 0.0:
+            loss = loss + ewc_lambda * ewc_penalty(model, ewc_mean, ewc_fisher)
 
         optimizer.zero_grad()
         loss.backward()
