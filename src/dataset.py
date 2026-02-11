@@ -2,7 +2,8 @@ from torch.utils.data import Dataset
 import numpy as np
 from PIL import Image, ImageDraw
 from pathlib import Path
-
+from typing import Optional, Callable
+from torch import Tensor
 
 class ShapesAndColours(Dataset):
     """This class generates a very simple, 
@@ -16,7 +17,12 @@ class ShapesAndColours(Dataset):
     Task 3 - Shape becomes discriminat feature, colour is non discriminate
     """
 
-    def __init__(self, task_id, transform = None, num_samples=500):
+    def __init__(
+        self,
+        task_id: int,
+        transform: Optional[Callable[[Image.Image], Tensor]] = None,
+        num_samples: int = 500,
+    ) -> None:
         
         self.task_id = task_id
         self.transform = transform
@@ -56,9 +62,9 @@ class ShapesAndColours(Dataset):
 
             self.data.append((img, label))
 
-    def save_dataset(self, base_dir="../datasets"):
+    def save_dataset(self, base_dir: Path = Path("../datasets")) -> None:
 
-        save_dir = Path(base_dir) / "ShapesAndColours" / f"task{self.task_id}"
+        save_dir = base_dir / "ShapesAndColours" / f"task{self.task_id}"
 
         save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -71,7 +77,7 @@ class ShapesAndColours(Dataset):
     def __len__(self):
         return len(self.data)
     
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int):
         img, label = self.data[idx]
         if self.transform:
             img = self.transform(img)

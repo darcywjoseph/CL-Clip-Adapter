@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Union, Optional
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -19,7 +20,12 @@ class ExperimentConfig:
     num_samples_test: int
     device: str
 
-def evaluate_model(model, data_loader, device):
+def evaluate_model(
+        model: Adapter, 
+        data_loader: DataLoader, 
+        device: Union[str, torch.device]
+    ) -> dict[str, object]:
+    
     model.eval()
     total_correct = 0
     total_samples = 0
@@ -53,7 +59,7 @@ def evaluate_model(model, data_loader, device):
         }
            
 
-def run_basic_experiment(cfg):
+def run_basic_experiment(cfg: ExperimentConfig):
     """
     Runs basic experiment on the ShapesAndColours dataset
     using a frozen CLIP backbone with a trainable adapter.
@@ -130,6 +136,7 @@ def run_basic_experiment(cfg):
 
     t3_after_t2 = evaluate_model(clip_plus_adapter, data_loader_task3_test, device=cfg.device)["accuracy"]
     print(f"Task3 accuracy after Task2: {t3_after_t2:.4f}")
+
 
 if __name__ == "__main__":
 

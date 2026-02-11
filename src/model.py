@@ -1,11 +1,19 @@
 import torch 
+from torch import Tensor
 import torch.nn as nn
 
 class Adapter(nn.Module):
     """
     A trainable adapter on top of a frozen CLIP encoder.
     """
-    def __init__(self, clip_model, input_dim=512, hidden_dim=256, output_dim=512):
+    def __init__(
+        self,
+        clip_model: nn.Module,
+        input_dim: int = 512,
+        hidden_dim: int = 256,
+        output_dim: int = 512,
+    ) -> None:
+        
         super(Adapter, self).__init__()
         self.clip_model = clip_model
         
@@ -24,7 +32,7 @@ class Adapter(nn.Module):
         self.layer_norm = nn.LayerNorm(output_dim) # TODO: test without this. 
         self.classifier = nn.Linear(output_dim, 2)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
 
         with torch.no_grad():
             features = self.clip_model.encode_image(x).float()

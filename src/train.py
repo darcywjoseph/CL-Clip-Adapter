@@ -1,9 +1,14 @@
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
+from torch.utils.data import DataLoader
+from torch.optim import Optimizer
 
-def contrastive_loss(features, labels, temperature=0.07):
+from model import Adapter
+
+def contrastive_loss(features: Tensor, labels: Tensor, temperature: float = 0.07) -> Tensor:
 
     features = F.normalize(features, dim=1)
     similarity = torch.matmul(features, features.T) / temperature
@@ -22,13 +27,17 @@ def contrastive_loss(features, labels, temperature=0.07):
     invariant_loss = invariant_loss.mean()
 
     return invariant_loss
-
-def train_single_epoch(loader, 
-                       model, 
-                       optimizer, 
-                       use_contrastive=True, 
-                       w=0.5, device="cuda"):
     
+
+def train_single_epoch(
+        loader: DataLoader, 
+        model: Adapter, 
+        optimizer: Optimizer, 
+        use_contrastive: bool =True, 
+        w:float=0.5, 
+        device: str="cuda"
+    ) -> float:
+
     model.train()
     total_loss = 0
     total_samples = 0
