@@ -12,10 +12,12 @@ class Adapter(nn.Module):
         input_dim: int = 512,
         hidden_dim: int = 256,
         output_dim: int = 512,
+        residual_weight: float = 0.2
     ) -> None:
         
         super(Adapter, self).__init__()
         self.clip_model = clip_model
+        self.residual_weight = residual_weight
         
         # Freeze CLIP backbone
         for param in self.clip_model.parameters():
@@ -35,9 +37,11 @@ class Adapter(nn.Module):
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
 
         with torch.no_grad():
-            features = self.clip_model.encode_image(x).float()
-        #TODO: Maybe add a residual connection here. 
-        features = self.adapter(features)
+            original_features = self.clip_model.encode_image(x).float()
+
+        adapter_out = self.adapter(original_features)
+
+        features = self.residual_weight * adapter_out + (1 - self.residual_weight) * original_features
         logits = self.classifier(features)
         
         return features, logits
