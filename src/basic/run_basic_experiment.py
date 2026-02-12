@@ -6,9 +6,9 @@ from torch.utils.data import DataLoader
 import clip
 import numpy as np
 import argparse
-from model import Adapter
-from dataset import ShapesAndColours
-from train import train_single_epoch, compute_fisher_diagonal
+from model.model import Adapter
+from basic.dataset import ShapesAndColours
+from model.train import train_single_epoch, compute_fisher_diagonal
 import logging
 import sys
 from pathlib import Path

@@ -44,7 +44,8 @@ python src/dataset.py
 ### Run Synthetic feature Shift Experiment 
 
 ```bash
-python src/run_basic_experiment.py --use_contrastive --use_ewc 
+cd src/
+python -m basic.run_basic_experiment --use_contrastive --use_ewc
 ```
 The --use_constrative flag can be used to toggle contrastive loss on and off. This was used in ablation.
 The --use_ewc flag can be used to toggle ewc on or off. This was investigative extension. 

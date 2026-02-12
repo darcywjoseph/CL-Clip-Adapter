@@ -2,16 +2,14 @@ from dataclasses import dataclass
 from typing import Optional
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 from torch.utils.data import DataLoader
 import random
 import numpy as np
 import clip
 from pathlib import Path
-from dataset import setup_task_datasets, infer_num_classes
-from model import Adapter 
-from train import train_task_iters
+from mtil.dataset_utils import setup_task_datasets, infer_num_classes
+from model.model import Adapter 
+from model.train import train_task_iters
 import logging
 import sys
 from datetime import datetime

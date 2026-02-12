@@ -1,89 +1,17 @@
-from torch.utils.data import Dataset
-import numpy as np
-from PIL import Image, ImageDraw
-from pathlib import Path
-from typing import Optional, Callable
 import torch
-from torch import Tensor
 from torchvision import datasets
+from torch.utils.data import random_split
 
-class ShapesAndColours(Dataset):
-    """This class generates a very simple, 
-    synthetic dataset composed of squares and circles, either red or green. 
-    According to the task (either task 1 or task 2), the dataset is configured differently
+def split_helper(full_dataset, train_size: int, test_size: int, seed: int=36):
 
-    Task 1 - both colour and shape are discriminative features 
-            i.e. class 0 is green squares; class 1 is red circles
-    Task 2 - Shape becomes non-discrminiative with colour being the sole discrminant feature. 
-            i.e. class 0 is green; class 1 is red
-    Task 3 - Shape becomes discriminat feature, colour is non discriminate
-    """
+    n = len(full_dataset)
 
-    def __init__(
-        self,
-        task_id: int,
-        transform: Optional[Callable[[Image.Image], Tensor]] = None,
-        num_samples: int = 500,
-    ) -> None:
-        
-        self.task_id = task_id
-        self.transform = transform
-        self.data = []
-
-        for _ in range(num_samples):
-
-            label = np.random.randint(0,2)
-
-            if self.task_id == 1 or self.task_id == 2:
-                if label == 0:
-                    colour = (0,255,0) #green
-                else:
-                    colour = (255,0,0) # red      
-            elif self.task_id == 3:
-                colour = (0,255,0)
-            else:
-                raise ValueError(f"Invalid task id: {self.task_id}")
-
-            if self.task_id == 1 or self.task_id == 3:
-                is_square = (label == 0)
-            elif self.task_id == 2:
-                is_square = (np.random.rand() > 0.5)
-            else:
-                raise ValueError(f"Invalid task id: {self.task_id}")
-
-            img = Image.new('RGB', (224, 224), color=(0, 0, 0))
-            draw = ImageDraw.Draw(img)
-
-            x = 112
-            y = 50
-
-            if is_square:
-                draw.rectangle([x-y, x-y, x+y, x+y], fill=colour)
-            else:
-                draw.ellipse([x-y, x-y, x+y, x+y], fill=colour)
-
-            self.data.append((img, label))
-
-    def save_dataset(self, base_dir: Path = Path("../datasets")) -> None:
-
-        save_dir = base_dir / "ShapesAndColours" / f"task{self.task_id}"
-
-        save_dir.mkdir(parents=True, exist_ok=True)
-
-        for i, (img, label) in enumerate(self.data):
-            file_path = save_dir / f"img_{i}_label_{label}.png"
-            img.save(file_path)
-
-        print(f"Saved {len(self.data)} images to {save_dir.resolve()}")
-
-    def __len__(self):
-        return len(self.data)
+    g = torch.Generator().manual_seed(seed)
     
-    def __getitem__(self, idx: int):
-        img, label = self.data[idx]
-        if self.transform:
-            img = self.transform(img)
-        return img, label
+    train_subset, test_subset, _ = random_split(
+        full_dataset, [train_size, test_size, n - train_size - test_size], generator=g
+    )
+    return train_subset, test_subset
     
 def setup_task_datasets(
     task_name: str,
@@ -95,6 +23,13 @@ def setup_task_datasets(
         train_split = datasets.FGVCAircraft(root=root, split="train", download=True, transform=preprocess)
         test_split  = datasets.FGVCAircraft(root=root, split="test",  download=True, transform=preprocess)
         classnames = getattr(train_split, "classes", None) or [f"class_{i}" for i in range(len(set(train_split.targets)))]
+
+    elif task_name == "Caltech101":
+        # MTIL fixed sizes: 6941 / 1736
+        full = datasets.Caltech101(root=root, download=True, transform=preprocess)
+        train_split, test_split = split_helper(full, train_size=6941, test_size=1736)
+        classnames = getattr(full, "categories", None)
+
     elif task_name == "CIFAR100":
         train_split = datasets.CIFAR100(root=root, train=True,  download=True, transform=preprocess)
         test_split  = datasets.CIFAR100(root=root, train=False, download=True, transform=preprocess)
@@ -106,9 +41,9 @@ def setup_task_datasets(
         classnames = getattr(train_split, "classes", None) or [f"class_{i}" for i in range(len(set(train_split.labels)))]
 
     elif task_name == "EuroSAT":
-        train_split = datasets.EuroSAT(root=root, download=True, transform=preprocess)
-        test_split  = datasets.EuroSAT(root=root, download=True, transform=preprocess)
-        classnames = getattr(train_split, "classes", None) or [f"class_{i}" for i in range(len(train_split.class_to_idx))]
+        full = datasets.EuroSAT(root=root, download=True, transform=preprocess)
+        train_split, test_split = split_helper(full, train_size=21600, test_size=5300,)
+        classnames = getattr(full, "classes", None) or [f"class_{i}" for i in range(len(full.class_to_idx))]
 
     elif task_name == "Flowers":
         train_split = datasets.Flowers102(root=root, split="train", download=True, transform=preprocess)
@@ -129,6 +64,18 @@ def setup_task_datasets(
         train_split = datasets.OxfordIIITPet(root=root, split="trainval", download=True, transform=preprocess)
         test_split  = datasets.OxfordIIITPet(root=root, split="test",     download=True, transform=preprocess)
         classnames = getattr(train_split, "classes", None) or [f"pet_{i}" for i in range(len(train_split.class_to_idx))]
+
+    elif task_name == "StanfordCars":
+        train_split = datasets.StanfordCars(root=root, split="train", download=True, transform=preprocess)
+        test_split  = datasets.StanfordCars(root=root, split="test",  download=True, transform=preprocess)
+        classnames = getattr(train_split, "classes", None)
+
+    elif task_name == "SUN397":
+        # MTIL fixed sizes: 87003 / 21751
+        full = datasets.SUN397(root=root, download=True, transform=preprocess)
+        train_split, test_split = split_helper(full, train_size=87003, test_size=21751)
+        classnames = getattr(full, "classes", None)
+
 
     else:
         raise ValueError(f"Unknown task: {task_name}")
@@ -164,14 +111,3 @@ def infer_num_classes(dataset: torch.utils.data.Dataset) -> int:
             pass
 
     return 2
-    
-if __name__ == "__main__":
-
-    dataset_task_1 = ShapesAndColours(task_id=1,transform=None,num_samples=500)
-    dataset_task_1.save_dataset()
-
-    dataset_task_2 = ShapesAndColours(task_id=2,transform=None,num_samples=500)
-    dataset_task_2.save_dataset()
-
-    dataset_task_3 = ShapesAndColours(task_id=3,transform=None,num_samples=500)
-    dataset_task_3.save_dataset()

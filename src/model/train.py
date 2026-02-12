@@ -1,6 +1,5 @@
 import torch
 from torch import Tensor
-import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
@@ -8,7 +7,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from typing import Optional, Any
 
-from model import Adapter
+from model.model import Adapter
 import logging
 
 logger = logging.getLogger("experiment_logs")
