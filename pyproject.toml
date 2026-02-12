@@ -1,6 +1,6 @@
 [project]
 name = "cl-clip-adapter"
-version = "0.1.0"
+version = "0.2.0"
 description = "poetry env required to run cl-clip-adapter"
 authors = [
     {name = "Darcy Joseph",email = "darcywjoseph@gmail.com"}
@@ -13,8 +13,7 @@ dependencies = [
     "numpy",
     "matplotlib ",
     "pillow",
-    "setuptools ",
-    "open-clip-torch (>=3.2.0,<4.0.0)",
+    "setuptools<70.0.0",
     "tqdm (>=4.67.3,<5.0.0)",
 ]
 

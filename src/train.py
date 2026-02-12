@@ -9,6 +9,9 @@ from torch.optim import Optimizer
 from typing import Optional, Any
 
 from model import Adapter
+import logging
+
+logger = logging.getLogger("experiment_logs")
 
 def contrastive_loss(features: Tensor, labels: Tensor, temperature: float = 0.07) -> Tensor:
 
@@ -203,6 +206,6 @@ def train_task_iters(
         total_steps += 1
 
         if (total_steps) % 200 == 0:
-            print(f"    step {total_steps}/{cfg.iters_per_task} | loss {total_loss/max(1, total_steps):.4f}")
+            logger.info(f"    step {total_steps}/{cfg.iters_per_task} | loss {total_loss/max(1, total_steps):.4f}")
 
     return total_loss / max(1, cfg.iters_per_task)

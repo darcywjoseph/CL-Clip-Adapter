@@ -7,19 +7,21 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import random
 import numpy as np
-import open_clip
+import clip
 from pathlib import Path
 from dataset import setup_task_datasets, infer_num_classes
 from model import Adapter 
 from train import train_task_iters
+import logging
+import sys
+from datetime import datetime
 
 CLIP_CACHE = Path("../clip_cache")
 
 @dataclass
 class MTILExperimentConfig:
     data_root: Path = Path("../data")
-    clip_model: str = "ViT-B-16"
-    clip_pretrained: str = "openai"
+    clip_model: str = "ViT-B/16"
     batch_size: int = 64
     num_workers: int = 4
     lr: float = 1e-3
@@ -30,7 +32,7 @@ class MTILExperimentConfig:
     order: str = "order_i"
     train_adapter: bool = True
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    use_contrastive: bool = True
+    use_contrastive: bool = False
 
 
 def set_seeds(seed: int):
@@ -71,7 +73,6 @@ def evaluate_task(
 @torch.no_grad()
 def evaluate_zeroshot_clip(
     clip_model,
-    tokenizer,
     test_dataset,
     classnames: list[str],
     device: str,
@@ -83,7 +84,7 @@ def evaluate_zeroshot_clip(
     clip_model.eval()
 
     prompts = [f"a photo of a {c}" for c in classnames]
-    text = tokenizer(prompts).to(device)
+    text = clip.tokenize(prompts).to(device)
     text_feats = clip_model.encode_text(text).float()
     text_feats = text_feats / text_feats.norm(dim=-1, keepdim=True)
 
@@ -106,7 +107,7 @@ def evaluate_zeroshot_clip(
 
     return correct / max(1, total)
 
-def main(cfg):
+def main(cfg, logger):
 
     set_seeds(cfg.seed)
 
@@ -123,12 +124,10 @@ def main(cfg):
     else:
         tasks = tasks_order_i
 
-    print("Loading CLIP...")
-    clip_model, preprocess_train, preprocess_eval = open_clip.create_model_and_transforms(
+    logger.info("Loading CLIP...")
+    clip_model, preprocess = clip.load(
         cfg.clip_model,
-        pretrained=cfg.clip_pretrained,
         device=cfg.device,
-        cache_dir=CLIP_CACHE
     )
     clip_model.eval()
     tokenizer = open_clip.get_tokenizer(cfg.clip_model)
@@ -140,10 +139,10 @@ def main(cfg):
     task_test_loaders: dict[str, DataLoader] = {}
 
     # Transfer (zero-shot CLIP) across all tasks before training
-    print("zero-shot CLIP on all tasks:")
+    logger.info("zero-shot CLIP on all tasks:")
     transfer_accs = []
     for task in tasks_order_i:
-        train_ds, test_ds, classnames = setup_task_datasets(task, cfg.data_root, preprocess_train, preprocess_eval)
+        train_ds, test_ds, classnames = setup_task_datasets(task, cfg.data_root, preprocess)
         acc_zs = evaluate_zeroshot_clip(
             clip_model=clip_model,
             tokenizer=tokenizer,
@@ -152,18 +151,18 @@ def main(cfg):
             device=cfg.device,
             batch_size=cfg.eval_batch_size,
         )
-        print(f"    {task:10s}: {acc_zs*100:.2f}%")
+        logger.info(f"    {task:10s}: {acc_zs*100:.2f}%")
         transfer_accs.append(acc_zs)
     transfer = sum(transfer_accs) / len(transfer_accs)
-    print(f"Transfer (mean zero-shot): {transfer*100:.2f}%")
+    logger.info(f"Transfer (mean zero-shot): {transfer*100:.2f}%")
 
     acc_matrix: list[list[Optional[float]]] = [] 
 
-    print("=== Continual Training (MTIL) ===")
+    logger.info("=== Continual Training (MTIL) ===")
     for t_idx, task in enumerate(tasks):
-        print(f"[Task {t_idx+1}/{len(tasks)}] {task}")
+        logger.info(f"[Task {t_idx+1}/{len(tasks)}] {task}")
 
-        train_ds, test_ds, classnames = setup_task_datasets(task, cfg.data_root, preprocess_train, preprocess_eval)
+        train_ds, test_ds, classnames = setup_task_datasets(task, cfg.data_root, preprocess)
         n_classes = infer_num_classes(train_ds)
         task_num_classes[task] = n_classes
 
@@ -191,13 +190,13 @@ def main(cfg):
                 p.requires_grad = False
 
         avg_loss = train_task_iters(cfg, model, train_loader, cfg.device, use_contrastive=cfg.use_contrastive)
-        print(f"  Finished {task} | avg loss {avg_loss:.4f}")
+        logger.info(f"  Finished {task} | avg loss {avg_loss:.4f}")
 
         # Snapshot this head
         task_heads[task] = {k: v.detach().cpu().clone() for k, v in model.classifier.state_dict().items()}
 
         row = []
-        print("  Eval on seen tasks:")
+        logger.info("  Eval on seen tasks:")
         seen_tasks = tasks[: t_idx + 1]
         for eval_task in seen_tasks:
             # load the correct head
@@ -206,12 +205,12 @@ def main(cfg):
             model.classifier.load_state_dict({k: v.to(cfg.device) for k, v in head_sd.items()})
 
             acc = evaluate_task(model, task_test_loaders[eval_task], cfg.device)
-            print(f"    {eval_task:10s}: {acc*100:.2f}%")
+            logger.info(f"    {eval_task:10s}: {acc*100:.2f}%")
             row.append(acc)
 
         acc_matrix.append(row)
 
-    print("=== Final Evaluation ===")
+    logger.info("=== Final Evaluation ===")
     last_accs = []
     for task in tasks:
         model.classifier = nn.Linear(512, task_num_classes[task]).to(cfg.device)
@@ -222,16 +221,46 @@ def main(cfg):
     last = sum(last_accs) / len(last_accs)
     avg_metric = 0.5 * (transfer + last)
 
-    print(f"Last (mean final acc): {last*100:.2f}%")
-    print(f"Average (Transfer+Last)/2: {avg_metric*100:.2f}%")
+    logger.info(f"Last (mean final acc): {last*100:.2f}%")
+    logger.info(f"Average (Transfer+Last)/2: {avg_metric*100:.2f}%")
 
-    print("\nAccuracy matrix (rows = after learning task i, cols = tasks seen so far):")
+    logger.info("\nAccuracy matrix (rows = after learning task i, cols = tasks seen so far):")
     for i, row in enumerate(acc_matrix):
         row_str = " ".join([f"{a*100:6.2f}" for a in row])
-        print(f"  after {tasks[i]:10s}: {row_str}")
+        logger.info(f"  after {tasks[i]:10s}: {row_str}")
 
 if __name__ == "__main__":
 
-    cfg = MTILExperimentConfig()
+    results_dir = Path("../results")
+    results_dir.mkdir(parents=True, exist_ok=True)
 
-    main(cfg)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = results_dir / f"mtil_experiment_{timestamp}.txt"
+
+    logger = logging.getLogger("experiment_logs")
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()  
+
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    fh = logging.FileHandler(log_file)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
+    cfg = MTILExperimentConfig()
+    
+    logger.info("==== MTIL Experiment Start ====")
+    logger.info(f"Config: {cfg}")
+    logger.info(f"PyTorch version: {torch.__version__}")
+    logger.info(f"Device: {cfg.device}")
+    logger.info("=" * 60)
+
+    main(cfg, logger)
+
+    logger.info("==== MTIL Experiment Complete ====")

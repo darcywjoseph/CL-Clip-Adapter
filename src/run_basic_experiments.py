@@ -3,14 +3,16 @@ from typing import Union, Optional
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
-import open_clip
+import clip
 import numpy as np
 import argparse
 from model import Adapter
 from dataset import ShapesAndColours
 from train import train_single_epoch, compute_fisher_diagonal
-
-CLIP_CACHE = "../clip_cache"
+import logging
+import sys
+from pathlib import Path
+from datetime import datetime
 
 @dataclass
 class ExperimentConfig:
@@ -85,11 +87,9 @@ def run_basic_experiment(cfg: ExperimentConfig):
         has retained the ability to discrminate based on shape after Task 2.
     """
         
-    clip_model, _, preprocessing = open_clip.create_model_and_transforms(
-        'ViT-B-16', 
-        pretrained='openai', 
+    clip_model, preprocessing = clip.load(
+        'ViT-B/16', 
         device=cfg.device,
-        cache_dir=CLIP_CACHE
     )
 
     clip_plus_adapter = Adapter(clip_model, input_dim=512, hidden_dim=256, output_dim=512)
@@ -108,7 +108,7 @@ def run_basic_experiment(cfg: ExperimentConfig):
 
     optimizer = optim.Adam(clip_plus_adapter.parameters(), lr=cfg.learning_rate)
 
-    print("Trainig Task 1...")
+    logger.info("Trainig Task 1...")
     for epoch in range(cfg.training_epochs):
         train_loss = train_single_epoch(
             data_loader_task1_train, 
@@ -116,19 +116,19 @@ def run_basic_experiment(cfg: ExperimentConfig):
             use_contrastive=cfg.use_contrastive,
             device=cfg.device
             )
-        print(f"epoch {epoch+1}/{cfg.training_epochs} loss: {train_loss:.4f}")
+        logger.info(f"epoch {epoch+1}/{cfg.training_epochs} loss: {train_loss:.4f}")
 
 
     t1_after_t1 = evaluate_model(clip_plus_adapter, data_loader_task1_test, device=cfg.device)["accuracy"]
-    print(f"Task1 accuracy after Task1: {t1_after_t1:.4f}")
+    logger.info(f"Task1 accuracy after Task1: {t1_after_t1:.4f}")
 
     t2_before_t2 = evaluate_model(clip_plus_adapter, data_loader_task2_test, device=cfg.device)["accuracy"]
-    print(f"Task2 accuracy before Task2 training: {t2_before_t2:.4f}")
+    logger.info(f"Task2 accuracy before Task2 training: {t2_before_t2:.4f}")
 
     ewc_mean = None
     ewc_fisher = None
     if cfg.use_ewc:
-        print("Computing Fisher (EWC) after Task 1...")
+        logger.info("Computing Fisher (EWC) after Task 1...")
         ewc_mean, ewc_fisher = compute_fisher_diagonal(
             model=clip_plus_adapter,
             dataloader=data_loader_task1_train,
@@ -136,7 +136,7 @@ def run_basic_experiment(cfg: ExperimentConfig):
             fisher_sample_size=cfg.fisher_sample_size,
         )
 
-    print("Training Task 2...")
+    logger.info("Training Task 2...")
     for epoch in range(cfg.training_epochs):
         train_loss = train_single_epoch(
             data_loader_task2_train, 
@@ -148,27 +148,49 @@ def run_basic_experiment(cfg: ExperimentConfig):
             ewc_fisher=ewc_fisher,
             ewc_lambda=cfg.ewc_lambda
         )
-        print(f"epoch {epoch+1}/{cfg.training_epochs} loss: {train_loss:.4f}")
+        logger.info(f"epoch {epoch+1}/{cfg.training_epochs} loss: {train_loss:.4f}")
 
     # Test model on task 2
     t2_after_t2 = evaluate_model(clip_plus_adapter, data_loader_task2_test, device=cfg.device)["accuracy"]
-    print(f"Task2 accuracy after Task2: {t2_after_t2:.4f}")
+    logger.info(f"Task2 accuracy after Task2: {t2_after_t2:.4f}")
 
     # Check forgetting by testing on task 1
     t1_after_t2 = evaluate_model(clip_plus_adapter, data_loader_task1_test,device=cfg.device)["accuracy"]
     accuracy_diff = t1_after_t1 - t1_after_t2
-    print(f"Task1 accuracy after Task2: {t1_after_t2:.4f}")
-    print(f"Difference in task 1 accuracy from before and after task 2 training: {accuracy_diff:.4f}")
+    logger.info(f"Task1 accuracy after Task2: {t1_after_t2:.4f}")
+    logger.info(f"Difference in task 1 accuracy from before and after task 2 training: {accuracy_diff:.4f}")
 
     # Check if model can classify based upon shape by testing on task 3
     dataset_task_3_test = ShapesAndColours(task_id=3, transform=preprocessing, num_samples=cfg.num_samples_test)
     data_loader_task3_test = DataLoader(dataset_task_3_test, batch_size=cfg.batch_size, shuffle=False)
 
     t3_after_t2 = evaluate_model(clip_plus_adapter, data_loader_task3_test, device=cfg.device)["accuracy"]
-    print(f"Task3 accuracy after Task2: {t3_after_t2:.4f}")
+    logger.info(f"Task3 accuracy after Task2: {t3_after_t2:.4f}")
 
 
 if __name__ == "__main__":
+
+    results_dir = Path("../results")
+    results_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = results_dir / f"basic_experiment_{timestamp}.txt"
+
+    logger = logging.getLogger("experiment_logs")
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()  
+
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+
+    fh = logging.FileHandler(log_file)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
     parser = argparse.ArgumentParser()
 
