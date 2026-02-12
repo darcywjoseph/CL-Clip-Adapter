@@ -130,7 +130,6 @@ def main(cfg, logger):
         device=cfg.device,
     )
     clip_model.eval()
-    tokenizer = open_clip.get_tokenizer(cfg.clip_model)
 
     model = Adapter(clip_model, input_dim=512, hidden_dim=256, output_dim=512).to(cfg.device)
 
@@ -145,7 +144,6 @@ def main(cfg, logger):
         train_ds, test_ds, classnames = setup_task_datasets(task, cfg.data_root, preprocess)
         acc_zs = evaluate_zeroshot_clip(
             clip_model=clip_model,
-            tokenizer=tokenizer,
             test_dataset=test_ds,
             classnames=classnames,
             device=cfg.device,
