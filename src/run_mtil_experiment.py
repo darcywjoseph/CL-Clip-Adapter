@@ -15,6 +15,7 @@ from train import train_task_iters
 import logging
 import sys
 from datetime import datetime
+import argparse
 
 CLIP_CACHE = Path("../clip_cache")
 
@@ -251,13 +252,22 @@ if __name__ == "__main__":
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    cfg = MTILExperimentConfig()
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--use_contrastive", action="store_true")
+
+    args = parser.parse_args()
+
+    cfg = MTILExperimentConfig(
+            clip_model = "ViT-B/16",
+            lr = 1e-3,
+            order = "order_i",
+            train_adapter = True,
+            use_contrastive = args.use_contrastive,
+    )
     
     logger.info("==== MTIL Experiment Start ====")
     logger.info(f"Config: {cfg}")
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"Device: {cfg.device}")
-    logger.info("=" * 60)
 
     main(cfg, logger)
 

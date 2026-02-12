@@ -212,4 +212,9 @@ if __name__ == "__main__":
         fisher_sample_size = 200,
     )
 
+    logger.info("==== Basic Experiment Start ====")
+    logger.info(f"Config: {cfg}")
+
     run_basic_experiment(cfg)
+
+    logger.info("==== Basic Experiment Complete ====")
