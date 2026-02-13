@@ -148,11 +148,8 @@ def train_single_epoch(
 
 def build_optimizer(cfg: Any, model: Adapter) -> optim.Optimizer:
     params = []
-    for name, p in model.named_parameters():
+    for _, p in model.named_parameters():
         if not p.requires_grad:
-            continue
-        # Optionally freeze adapter layers to train only head
-        if (not cfg.train_adapter) and ("classifier" not in name):
             continue
         params.append(p)
 
