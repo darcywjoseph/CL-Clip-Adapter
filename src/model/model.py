@@ -28,11 +28,15 @@ class Adapter(nn.Module):
             nn.Linear(input_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, output_dim),
-            nn.LayerNorm(output_dim)
+            nn.LayerNorm(output_dim),
         )
 
-        self.layer_norm = nn.LayerNorm(output_dim) # TODO: test without this. 
-        self.classifier = nn.Linear(output_dim, 2)
+        self.classifier: nn.Module | None = None
+
+    def set_classifier(self, classifier: nn.Module) -> None:
+        self.classifier = classifier
+        for p in self.classifier.parameters():
+            p.requires_grad = False
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
 
@@ -45,3 +49,20 @@ class Adapter(nn.Module):
         logits = self.classifier(features)
         
         return features, logits
+    
+class CLIPZeroShotHead(nn.Linear):
+    """
+    adapted from MoE head builidng logic. 
+    """
+    def __init__(self, weights: torch.Tensor, normalize: bool = True):
+        # weights: (num_classes, feat_dim)
+        out_dim, in_dim = weights.shape
+        super().__init__(in_dim, out_dim, bias=False)
+        self.normalize = normalize
+        with torch.no_grad():
+            self.weight.copy_(weights)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.normalize:
+            x = x / (x.norm(dim=-1, keepdim=True) + 1e-12)
+        return super().forward(x)

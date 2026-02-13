@@ -33,6 +33,23 @@ Incase of failure, add depencies via:
 ```bash
 poetry add <package-name>
 ```
+
+## Setup StanfordCars dataset (torchvision method broken)
+
+Download zip from kaggle - https://www.kaggle.com/datasets/eduardo4jesus/stanford-cars-dataset
+Move the zip file to data/stanford_cars
+
+```bash
+cd data/
+mkdir stanford_cars
+cd stanford_cars
+unzip archive.zip
+```
+
+download from cars_test_annos_withlabels (1).mat https://www.kaggle.com/code/subhangaupadhaya/pytorch-stanfordcars-classification/input?select=cars_test_annos_withlabels+%281%29.mat
+
+Rename to cars_test_annos_withlabels.mat and drag into data/stanford_cars/car_devkit/devkit/
+
 ## Repeat Investigation Results
 
 Optionally, you can build the synthetci datasets for the Synthetic Feature Shift Experiment and save to view. 
