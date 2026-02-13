@@ -9,7 +9,7 @@ import clip
 from pathlib import Path
 from mtil.dataset_utils import setup_task_datasets
 from model.model import Adapter 
-from model.train import train_task_iters
+from model.train import train_task_iters, compute_fisher_diagonal
 from model.model_utils import get_prompts, build_clip_zeroshot_head, CLIPZeroShotHead
 import logging
 import sys
@@ -36,7 +36,11 @@ class MTILExperimentConfig:
     order: str = "order_i"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     use_contrastive: bool = False
-    residual_weight: float = 1
+    use_ewc: bool = False
+    residual_weight: float = 0.2
+    skip_zeroshot: bool = False
+    ewc_lambda: float = 10.0
+    fisher_sample_size: int = 200
 
 
 def set_seeds(seed: int):
@@ -164,44 +168,50 @@ def main(cfg, logger):
 
     all_classnames: dict[str, list[str]] = {}
 
-    logger.info("zero-shot CLIP on all tasks:")
-    all_zs_ac = []
-    for task in tasks_in_order:
+    if not cfg.skip_zeroshot:
+        logger.info("zero-shot CLIP on all tasks:")
+        all_zs_ac = []
+        for task in tasks_in_order:
 
-        train_dataset, test_dataset, classnames, templates = setup_task_datasets(
-            task_name=task,
-            root=str(cfg.data_root),
-            preprocess=preprocess,
-            batch_size=cfg.batch_size,
-            batch_size_eval=cfg.eval_batch_size,
-            num_workers=cfg.num_workers,
-        )
-        all_classnames[task] = classnames
-        all_templates[task] = templates
-        all_test_loaders[task] = DataLoader(
-            test_dataset,
-            batch_size=cfg.eval_batch_size,
-            shuffle=False,
-            num_workers=cfg.num_workers,
-            pin_memory=True,
-        )
-        acc_zs = evaluate_zeroshot_clip(
-            clip_model=clip_model,
-            test_dataset=test_dataset,
-            classnames=classnames,
-            device=cfg.device,
-            batch_size=cfg.eval_batch_size,
-            templates=templates, 
-        )
+            train_dataset, test_dataset, classnames, templates = setup_task_datasets(
+                task_name=task,
+                root=str(cfg.data_root),
+                preprocess=preprocess,
+                batch_size=cfg.batch_size,
+                batch_size_eval=cfg.eval_batch_size,
+                num_workers=cfg.num_workers,
+            )
+            all_classnames[task] = classnames
+            all_templates[task] = templates
+            all_test_loaders[task] = DataLoader(
+                test_dataset,
+                batch_size=cfg.eval_batch_size,
+                shuffle=False,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+            )
+            acc_zs = evaluate_zeroshot_clip(
+                clip_model=clip_model,
+                test_dataset=test_dataset,
+                classnames=classnames,
+                device=cfg.device,
+                batch_size=cfg.eval_batch_size,
+                templates=templates, 
+            )
 
-        logger.info(f"    {task:10s}: {acc_zs*100:.2f}%")
-        all_zs_ac.append(acc_zs)
+            logger.info(f"    {task:10s}: {acc_zs*100:.2f}%")
+            all_zs_ac.append(acc_zs)
 
-    accuracy = sum(all_zs_ac) / len(all_zs_ac)
-    logger.info(f"Mean zero-shot accuracy: {accuracy*100:.2f}%")
+        accuracy = sum(all_zs_ac) / len(all_zs_ac)
+        logger.info(f"Mean zero-shot accuracy: {accuracy*100:.2f}%")
+    else:
+        logger.info("Skipping zero-shot CLIP evaluation")
 
     N = len(tasks_in_order)
     acc_matrix: list[list[float]] = []
+
+    ewc_mean: dict[str, torch.Tensor] | None = None
+    ewc_fisher: dict[str, torch.Tensor] | None = None
 
     logger.info("=== Evaluating CLIP Adapter on MTIL ===")
     for t_idx, task in enumerate(tasks_in_order):
@@ -215,6 +225,17 @@ def main(cfg, logger):
             batch_size_eval=cfg.eval_batch_size,
             num_workers=cfg.num_workers,
         )
+
+        if task not in all_classnames:
+            all_classnames[task] = classnames
+            all_templates[task] = templates
+            all_test_loaders[task] = DataLoader(
+                test_dataset,
+                batch_size=cfg.eval_batch_size,
+                shuffle=False,
+                num_workers=cfg.num_workers,
+                pin_memory=True,
+            )
 
         train_loader = DataLoader(
             train_dataset,
@@ -246,8 +267,38 @@ def main(cfg, logger):
             if "clip_model" in name:
                 p.requires_grad = False
 
-        avg_loss = train_task_iters(cfg, model, train_loader, cfg.device, use_contrastive=cfg.use_contrastive)
+        avg_loss = train_task_iters(
+            cfg, 
+            model, 
+            train_loader, 
+            cfg.device, 
+            use_contrastive=cfg.use_contrastive,
+            ewc_mean=ewc_mean,
+            ewc_fisher=ewc_fisher,
+            ewc_lambda=cfg.ewc_lambda)
+        
         logger.info(f"  Finished {task} | avg loss {avg_loss:.4f}")
+
+        if cfg.use_ewc:
+            logger.info(f"  Computing Fisher information for {task}...")
+            task_mean, task_fisher = compute_fisher_diagonal(
+                model=model,
+                dataloader=train_loader,
+                device=cfg.device,
+                fisher_sample_size=cfg.fisher_sample_size,
+            )
+            
+            if ewc_mean is None:
+                # First task: initialize
+                ewc_mean = task_mean
+                ewc_fisher = task_fisher
+            else:
+                # Accumulate Fisher across tasks (sum approach)
+                for name in ewc_fisher:
+                    if name in task_fisher:
+                        ewc_fisher[name] = ewc_fisher[name] + task_fisher[name]
+                # Update mean to current parameters
+                ewc_mean = task_mean
 
         # save this head for later eval
         task_heads[task] = model.classifier.weight.detach().cpu().clone()
@@ -333,6 +384,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--use_contrastive", action="store_true")
+    parser.add_argument("--use_ewc", action="store_true",)
+    parser.add_argument("--skip_zeroshot", action="store_true",)
 
     args = parser.parse_args()
 
@@ -342,6 +395,8 @@ if __name__ == "__main__":
             order = "order_i",
             residual_weight=0.2,
             use_contrastive = args.use_contrastive,
+            use_ewc = args.use_ewc,
+            skip_zeroshot = args.skip_zeroshot,
     )
     
     logger.info("==== MTIL Experiment Start ====")

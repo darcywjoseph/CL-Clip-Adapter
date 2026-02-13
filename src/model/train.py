@@ -163,6 +163,9 @@ def train_task_iters(
         device: str,
         use_contrastive: bool = True,
         w: float = 0.5,
+        ewc_mean: Optional[dict[str, Tensor]] = None, 
+        ewc_fisher: Optional[dict[str, Tensor]] = None,
+        ewc_lambda: float = 0.0,   
     ) -> float:
 
     model.train()
@@ -193,6 +196,10 @@ def train_task_iters(
             loss = classif_loss + w * contr_loss
         else:
             loss = classif_loss
+
+        if ewc_mean is not None and ewc_fisher is not None and ewc_lambda > 0.0:
+            ewc_loss = ewc_penalty(model, ewc_mean, ewc_fisher)
+            loss = loss + ewc_lambda * ewc_loss
 
         opt.zero_grad(set_to_none=True)
         loss.backward()
