@@ -289,11 +289,10 @@ def main(cfg, logger):
             )
             
             if ewc_mean is None:
-                # First task: initialize
                 ewc_mean = task_mean
                 ewc_fisher = task_fisher
             else:
-                # Accumulate Fisher across tasks (sum approach)
+                # Accumulate Fisher across tasks 
                 for name in ewc_fisher:
                     if name in task_fisher:
                         ewc_fisher[name] = ewc_fisher[name] + task_fisher[name]
@@ -311,6 +310,26 @@ def main(cfg, logger):
                 W = task_heads[eval_task].to(cfg.device)
             else:
                 # fetch zeroshot head for unseen tasks
+                # load classnames and templates if not already loaded from zeroshot
+                if eval_task not in all_classnames:
+                    _, test_ds_tmp, cn_tmp, tpl_tmp = setup_task_datasets(
+                        task_name=eval_task,
+                        root=str(cfg.data_root),
+                        preprocess=preprocess,
+                        batch_size=cfg.batch_size,
+                        batch_size_eval=cfg.eval_batch_size,
+                        num_workers=cfg.num_workers,
+                    )
+                    all_classnames[eval_task] = cn_tmp
+                    all_templates[eval_task] = tpl_tmp
+                    all_test_loaders[eval_task] = DataLoader(
+                        test_ds_tmp,
+                        batch_size=cfg.eval_batch_size,
+                        shuffle=False,
+                        num_workers=cfg.num_workers,
+                        pin_memory=True,
+                    )
+                
                 tmp_head = build_clip_zeroshot_head(
                     clip_model=clip_model,
                     classnames=all_classnames[eval_task],
