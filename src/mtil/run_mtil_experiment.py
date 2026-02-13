@@ -36,6 +36,7 @@ class MTILExperimentConfig:
     order: str = "order_i"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     use_contrastive: bool = False
+    residual_weight: float = 1
 
 
 def set_seeds(seed: int):
@@ -154,7 +155,7 @@ def main(cfg, logger):
     )
     clip_model.eval()
 
-    model = Adapter(clip_model, input_dim=512, hidden_dim=256, output_dim=512).to(cfg.device)
+    model = Adapter(clip_model, input_dim=512, hidden_dim=256, output_dim=512, residual_weight=cfg.residual_weight).to(cfg.device)
 
     task_heads: dict[str, torch.Tensor] = {}
     task_test_loaders: dict[str, DataLoader] = {}
