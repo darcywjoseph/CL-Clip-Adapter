@@ -341,7 +341,7 @@ class EuroSAT(ClassificationDataset):
         super().__init__(*args, **kwargs)
         self.name = "eurosat"
         dataset = datasets.EuroSAT(
-            self.location, download=False, transform=self.preprocess
+            self.location, download=True, transform=self.preprocess
         )
         train_dataset, test_dataset = self.split_dataset(dataset)
 
@@ -559,7 +559,7 @@ class SUN397(ClassificationDataset):
         self.name = "sun397"
         # print('111')
         dataset = datasets.SUN397(
-            self.location, download=False, transform=self.preprocess
+            self.location, download=True, transform=self.preprocess
         )
 
         train_dataset, test_dataset = self.split_dataset(dataset)
