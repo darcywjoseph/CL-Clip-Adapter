@@ -340,6 +340,7 @@ if __name__ == "__main__":
             clip_model = "ViT-B/16",
             lr = 1e-3,
             order = "order_i",
+            residual_weight=0.2,
             use_contrastive = args.use_contrastive,
     )
     
