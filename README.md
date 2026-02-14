@@ -3,11 +3,23 @@ Code relating to the implementation of a continual learning adapter for pretrain
 
 ```bash
 ├── README.md
+├── data
 ├── src
+├── __init__.py
+├── basic
+│   ├── __init__.py
 │   ├── dataset.py
-│   ├── experiments.py
+│   └── run_basic_experiment.py
+├── model
+│   ├── __init__.py
 │   ├── model.py
+│   ├── model_utils.py
 │   └── train.py
+└── mtil
+    ├── __init__.py
+    ├── dataset_config.py
+    ├── dataset_utils.py
+    └── run_mtil_experiment.py
 ├── pyproject.toml
 ├── poetry.lock
 └── .gitignore
