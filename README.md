@@ -27,6 +27,8 @@ Install and activate the Poetry environment.
 ```bash
 poetry install
 eval $(poetry env activate)
+pip install ftfy regex tqdm
+pip install git+https://github.com/openai/CLIP.git
 ```
 Incase of failure, add depencies via:
 
