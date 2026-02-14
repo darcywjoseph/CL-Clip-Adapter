@@ -82,6 +82,8 @@ def _make_shape_image(is_square: bool, colour: tuple[int, int, int]) -> Image.Im
 
     return img
 
+def cos(a, b):
+    return (a * b).sum(dim=-1)
 
 def compute_shape_color_sensitivity(
     model: Adapter,
@@ -90,7 +92,7 @@ def compute_shape_color_sensitivity(
     repeats: int = 64,
 ) -> dict[str, float]:
     """
-    Uses 4 canonical images repeated many times to get a stable estimate of how much
+    Uses 4 images repeated many times to get a estimate of how much
     the representation changes when:
       - shape changes (same color)
       - color changes (same shape)
@@ -103,10 +105,10 @@ def compute_shape_color_sensitivity(
     RED = (255, 0, 0)
 
     # Canonical images
-    GS = _make_shape_image(is_square=True, colour=GREEN)   # green square
-    GC = _make_shape_image(is_square=False, colour=GREEN)  # green circle
-    RS = _make_shape_image(is_square=True, colour=RED)     # red square
-    RC = _make_shape_image(is_square=False, colour=RED)    # red circle
+    GS = _make_shape_image(is_square=True, colour=GREEN)
+    GC = _make_shape_image(is_square=False, colour=GREEN)
+    RS = _make_shape_image(is_square=True, colour=RED)
+    RC = _make_shape_image(is_square=False, colour=RED)
 
     imgs = [GS, GC, RS, RC] * repeats
     batch = torch.stack([preprocess(im) for im in imgs]).to(device)
@@ -115,11 +117,8 @@ def compute_shape_color_sensitivity(
         feats, _ = model(batch)
         feats = feats / (feats.norm(dim=-1, keepdim=True) + 1e-12)
 
-    feats = feats.view(repeats, 4, -1)  # [repeats, 4, D]
+    feats = feats.view(repeats, 4, -1)
     GS_f, GC_f, RS_f, RC_f = feats[:, 0, :], feats[:, 1, :], feats[:, 2, :], feats[:, 3, :]
-
-    def cos(a, b):
-        return (a * b).sum(dim=-1)
 
     shape_sim = torch.cat([cos(GS_f, GC_f), cos(RS_f, RC_f)], dim=0)
     color_sim = torch.cat([cos(GS_f, RS_f), cos(GC_f, RC_f)], dim=0)

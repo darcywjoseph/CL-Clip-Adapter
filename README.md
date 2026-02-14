@@ -54,12 +54,6 @@ Rename to cars_test_annos_withlabels.mat and drag into data/stanford_cars/car_de
 
 ## Repeat Investigation Results
 
-Optionally, you can build the synthetci datasets for the Synthetic Feature Shift Experiment and save to view. 
-Otherwise this will dont within the experiment run script with no saving.
-```bash
-python src/dataset.py
-```
-
 ### Run Synthetic feature Shift Experiment 
 
 ```bash
@@ -73,5 +67,5 @@ The switch either function off just exclude the flag from the command.
 ### Run MTIL Benchmark Experiment 
 
 ```bash
-python src/run_mtil_experiment.py 
+python src/run_mtil_experiment.py --use_contrastive --use_ewc
 ```
