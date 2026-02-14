@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from typing import Union, Optional
+from typing import Union
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import clip
@@ -13,6 +14,8 @@ import logging
 import sys
 from pathlib import Path
 from datetime import datetime
+from PIL import Image, ImageDraw
+
 
 @dataclass
 class ExperimentConfig:
@@ -26,12 +29,13 @@ class ExperimentConfig:
     use_ewc: bool = False
     ewc_lambda: float = 10.0
     fisher_sample_size: int = 200
+    sensitivity_repeats: int = 64
 
 def evaluate_model(
-        model: Adapter, 
-        data_loader: DataLoader, 
-        device: Union[str, torch.device]
-    ) -> dict[str, object]:
+    model: Adapter,
+    data_loader: DataLoader,
+    device: Union[str, torch.device]
+) -> dict[str, object]:
 
     model.eval()
     total_correct = 0
@@ -41,7 +45,6 @@ def evaluate_model(
     all_features = []
 
     with torch.no_grad():
-
         for images, labels in data_loader:
             images = images.to(device)
             labels = labels.to(device)
@@ -64,7 +67,72 @@ def evaluate_model(
             'labels': np.array(all_labels),
             'features': np.concatenate(all_features, axis=0)
         }
-           
+
+def _make_shape_image(is_square: bool, colour: tuple[int, int, int]) -> Image.Image:
+    img = Image.new("RGB", (224, 224), color=(0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    x = 112
+    y = 50
+
+    if is_square:
+        draw.rectangle([x - y, x - y, x + y, x + y], fill=colour)
+    else:
+        draw.ellipse([x - y, x - y, x + y, x + y], fill=colour)
+
+    return img
+
+
+def compute_shape_color_sensitivity(
+    model: Adapter,
+    preprocess,
+    device: str,
+    repeats: int = 64,
+) -> dict[str, float]:
+    """
+    Uses 4 canonical images repeated many times to get a stable estimate of how much
+    the representation changes when:
+      - shape changes (same color)
+      - color changes (same shape)
+
+    Returns mean cosine distances (1 - cosine similarity).
+    """
+
+    model.eval()
+    GREEN = (0, 255, 0)
+    RED = (255, 0, 0)
+
+    # Canonical images
+    GS = _make_shape_image(is_square=True, colour=GREEN)   # green square
+    GC = _make_shape_image(is_square=False, colour=GREEN)  # green circle
+    RS = _make_shape_image(is_square=True, colour=RED)     # red square
+    RC = _make_shape_image(is_square=False, colour=RED)    # red circle
+
+    imgs = [GS, GC, RS, RC] * repeats
+    batch = torch.stack([preprocess(im) for im in imgs]).to(device)
+
+    with torch.no_grad():
+        feats, _ = model(batch)
+        feats = feats / (feats.norm(dim=-1, keepdim=True) + 1e-12)
+
+    feats = feats.view(repeats, 4, -1)  # [repeats, 4, D]
+    GS_f, GC_f, RS_f, RC_f = feats[:, 0, :], feats[:, 1, :], feats[:, 2, :], feats[:, 3, :]
+
+    def cos(a, b):
+        return (a * b).sum(dim=-1)
+
+    shape_sim = torch.cat([cos(GS_f, GC_f), cos(RS_f, RC_f)], dim=0)
+    color_sim = torch.cat([cos(GS_f, RS_f), cos(GC_f, RC_f)], dim=0)
+
+    shape_dist = (1.0 - shape_sim).mean().item()
+    color_dist = (1.0 - color_sim).mean().item()
+
+    return {
+        "shape_cosine_dist": shape_dist,
+        "color_cosine_dist": color_dist,
+        "shape_minus_color": shape_dist - color_dist,
+        "shape_over_color": shape_dist / (color_dist + 1e-8),
+    }
 
 def run_basic_experiment(cfg: ExperimentConfig):
     """
@@ -92,8 +160,8 @@ def run_basic_experiment(cfg: ExperimentConfig):
         device=cfg.device,
     )
 
-    clip_plus_adapter = Adapter(clip_model, input_dim=512, hidden_dim=256, output_dim=512)
-    clip_plus_adapter = clip_plus_adapter.to(cfg.device)
+    clip_plus_adapter = Adapter(clip_model, input_dim=512, hidden_dim=256, output_dim=512).to(cfg.device)
+    clip_plus_adapter.classifier = nn.Linear(512, 2).to(cfg.device)
 
     dataset_task_1_train = ShapesAndColours(task_id=1, transform=preprocessing, num_samples=cfg.num_samples_train)
     data_loader_task1_train = DataLoader(dataset_task_1_train, batch_size=cfg.batch_size, shuffle=True)
@@ -118,9 +186,17 @@ def run_basic_experiment(cfg: ExperimentConfig):
             )
         logger.info(f"epoch {epoch+1}/{cfg.training_epochs} loss: {train_loss:.4f}")
 
-
     t1_after_t1 = evaluate_model(clip_plus_adapter, data_loader_task1_test, device=cfg.device)["accuracy"]
     logger.info(f"Task1 accuracy after Task1: {t1_after_t1:.4f}")
+    feature_sensitivity_after_t1 = compute_shape_color_sensitivity(
+        clip_plus_adapter, preprocessing, cfg.device, repeats=cfg.sensitivity_repeats
+    )
+    logger.info(
+        "Sensitivity after Task1 | "
+        f"shape_dist={feature_sensitivity_after_t1['shape_cosine_dist']:.4f} "
+        f"color_dist={feature_sensitivity_after_t1['color_cosine_dist']:.4f} "
+        f"shape/color={feature_sensitivity_after_t1['shape_over_color']:.4f}"
+    )
 
     t2_before_t2 = evaluate_model(clip_plus_adapter, data_loader_task2_test, device=cfg.device)["accuracy"]
     logger.info(f"Task2 accuracy before Task2 training: {t2_before_t2:.4f}")
@@ -137,6 +213,8 @@ def run_basic_experiment(cfg: ExperimentConfig):
         )
 
     logger.info("Training Task 2...")
+    optimizer = optim.Adam(clip_plus_adapter.parameters(), lr=cfg.learning_rate)
+    
     for epoch in range(cfg.training_epochs):
         train_loss = train_single_epoch(
             data_loader_task2_train, 
@@ -165,7 +243,17 @@ def run_basic_experiment(cfg: ExperimentConfig):
     data_loader_task3_test = DataLoader(dataset_task_3_test, batch_size=cfg.batch_size, shuffle=False)
 
     t3_after_t2 = evaluate_model(clip_plus_adapter, data_loader_task3_test, device=cfg.device)["accuracy"]
-    logger.info(f"Task3 accuracy after Task2: {t3_after_t2:.4f}")
+    logger.info(f"Task3 (shape-only probe) accuracy after Task2: {t3_after_t2:.4f}")
+
+    feature_sensitivity_after_t2 = compute_shape_color_sensitivity(
+        clip_plus_adapter, preprocessing, cfg.device, repeats=cfg.sensitivity_repeats
+    )
+    logger.info(
+        "Sensitivity after Task2 | "
+        f"shape_dist={feature_sensitivity_after_t2['shape_cosine_dist']:.4f} "
+        f"color_dist={feature_sensitivity_after_t2['color_cosine_dist']:.4f} "
+        f"shape/color={feature_sensitivity_after_t2['shape_over_color']:.4f}"
+    )
 
 
 if __name__ == "__main__":
@@ -210,6 +298,7 @@ if __name__ == "__main__":
         use_ewc=args.use_ewc,
         ewc_lambda = 10.0,
         fisher_sample_size = 200,
+        sensitivity_repeats = 64,
     )
 
     logger.info("==== Basic Experiment Start ====")
