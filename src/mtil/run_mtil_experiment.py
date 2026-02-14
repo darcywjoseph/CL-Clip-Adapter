@@ -400,22 +400,47 @@ if __name__ == "__main__":
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    parser = argparse.ArgumentParser()
-
+    parser = argparse.ArgumentParser(description="MTIL Experiment with CLIP Adapter")
+    parser.add_argument("--data_root", type=str, default=str(DEFAULT_DATA_ROOT))
+    parser.add_argument("--clip_model", type=str, default="ViT-B/16",
+                        choices=["ViT-B/32", "ViT-B/16", "ViT-L/14"])
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--eval_batch_size", type=int, default=128)
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--weight_decay", type=float, default=1e-4)
+    parser.add_argument("--iters_per_task", type=int, default=1000)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--order", type=str, default="order_i",
+                        choices=["order_i", "order_ii"])
+    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--residual_weight", type=float, default=0.2)
     parser.add_argument("--use_contrastive", action="store_true")
-    parser.add_argument("--use_ewc", action="store_true",)
-    parser.add_argument("--skip_zeroshot", action="store_true",)
+    parser.add_argument("--use_ewc", action="store_true")
+    parser.add_argument("--skip_zeroshot", action="store_true")
+    parser.add_argument("--ewc_lambda", type=float, default=10.0,)
+    parser.add_argument("--fisher_sample_size", type=int, default=200)
 
     args = parser.parse_args()
 
     cfg = MTILExperimentConfig(
-            clip_model = "ViT-B/16",
-            lr = 1e-3,
-            order = "order_i",
-            residual_weight=0.2,
-            use_contrastive = args.use_contrastive,
-            use_ewc = args.use_ewc,
-            skip_zeroshot = args.skip_zeroshot,
+        data_root=Path(args.data_root),
+        clip_model=args.clip_model,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        lr=args.lr,
+        weight_decay=args.weight_decay,
+        iters_per_task=args.iters_per_task,
+        eval_batch_size=args.eval_batch_size,
+        seed=args.seed,
+        order=args.order,
+        device=args.device,
+        use_contrastive=args.use_contrastive,
+        use_ewc=args.use_ewc,
+        residual_weight=args.residual_weight,
+        skip_zeroshot=args.skip_zeroshot,
+        ewc_lambda=args.ewc_lambda,
+        fisher_sample_size=args.fisher_sample_size,
     )
     
     logger.info("==== MTIL Experiment Start ====")
