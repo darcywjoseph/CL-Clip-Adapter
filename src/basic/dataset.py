@@ -1,9 +1,14 @@
+import torch
 from torch.utils.data import Dataset
 import numpy as np
 from PIL import Image, ImageDraw
 from pathlib import Path
 from typing import Optional, Callable
 from torch import Tensor
+from model.model import Adapter
+
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
 
 
 class ShapesAndColours(Dataset):
@@ -35,11 +40,11 @@ class ShapesAndColours(Dataset):
 
             if self.task_id == 1 or self.task_id == 2:
                 if label == 0:
-                    colour = (0,255,0) #green
+                    colour = GREEN
                 else:
-                    colour = (255,0,0) # red      
+                    colour = RED      
             elif self.task_id == 3:
-                colour = (0,255,0)
+                colour = GREEN
             else:
                 raise ValueError(f"Invalid task id: {self.task_id}")
 
@@ -50,16 +55,7 @@ class ShapesAndColours(Dataset):
             else:
                 raise ValueError(f"Invalid task id: {self.task_id}")
 
-            img = Image.new('RGB', (224, 224), color=(0, 0, 0))
-            draw = ImageDraw.Draw(img)
-
-            x = 112
-            y = 50
-
-            if is_square:
-                draw.rectangle([x-y, x-y, x+y, x+y], fill=colour)
-            else:
-                draw.ellipse([x-y, x-y, x+y, x+y], fill=colour)
+            img = _make_image(is_square, colour)
 
             self.data.append((img, label))
 
@@ -83,3 +79,65 @@ class ShapesAndColours(Dataset):
         if self.transform:
             img = self.transform(img)
         return img, label
+    
+def _make_image(is_square: bool, colour: tuple[int, int, int]) -> Image.Image:
+    img = Image.new("RGB", (224, 224), color=(0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    x = 112
+    y = 50
+
+    if is_square:
+        draw.rectangle([x - y, x - y, x + y, x + y], fill=colour)
+    else:
+        draw.ellipse([x - y, x - y, x + y, x + y], fill=colour)
+
+    return img
+
+def cos(a, b):
+    return (a * b).sum(dim=-1)
+
+def compute_shape_color_sensitivity(
+    model: Adapter,
+    preprocess,
+    device: str,
+    repeats: int = 64,
+) -> dict[str, float]:
+    """
+    Uses 4 images repeated many times to get a estimate of how much
+    the representation changes when:
+      - shape changes (same color)
+      - color changes (same shape)
+
+    Returns mean cosine distances (1 - cosine similarity).
+    """
+
+    model.eval()
+
+    green_square = _make_image(is_square=True, colour=GREEN)
+    green_circle = _make_image(is_square=False, colour=GREEN)
+    red_square = _make_image(is_square=True, colour=RED)
+    red_circle = _make_image(is_square=False, colour=RED)
+
+    imgs = [green_square, green_circle, red_square, red_circle] * repeats
+    batch = torch.stack([preprocess(im) for im in imgs]).to(device)
+
+    with torch.no_grad():
+        feats, _ = model(batch)
+        feats = feats / (feats.norm(dim=-1, keepdim=True) + 1e-12)
+
+    feats = feats.view(repeats, 4, -1)
+    GS_f, GC_f, RS_f, RC_f = feats[:, 0, :], feats[:, 1, :], feats[:, 2, :], feats[:, 3, :]
+
+    shape_sim = torch.cat([cos(GS_f, GC_f), cos(RS_f, RC_f)], dim=0)
+    color_sim = torch.cat([cos(GS_f, RS_f), cos(GC_f, RC_f)], dim=0)
+
+    shape_dist = (1.0 - shape_sim).mean().item()
+    color_dist = (1.0 - color_sim).mean().item()
+
+    return {
+        "shape_cosine_dist": shape_dist,
+        "color_cosine_dist": color_dist,
+        "shape_minus_color": shape_dist - color_dist,
+        "shape_over_color": shape_dist / (color_dist + 1e-8),
+    }

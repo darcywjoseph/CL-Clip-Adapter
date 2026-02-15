@@ -8,13 +8,12 @@ import clip
 import numpy as np
 import argparse
 from model.model import Adapter
-from basic.dataset import ShapesAndColours
+from basic.dataset import ShapesAndColours, compute_shape_color_sensitivity
 from model.train import train_single_epoch, compute_fisher_diagonal
 import logging
 import sys
 from pathlib import Path
 from datetime import datetime
-from PIL import Image, ImageDraw
 
 
 @dataclass
@@ -67,71 +66,6 @@ def evaluate_model(
             'labels': np.array(all_labels),
             'features': np.concatenate(all_features, axis=0)
         }
-
-def _make_shape_image(is_square: bool, colour: tuple[int, int, int]) -> Image.Image:
-    img = Image.new("RGB", (224, 224), color=(0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    x = 112
-    y = 50
-
-    if is_square:
-        draw.rectangle([x - y, x - y, x + y, x + y], fill=colour)
-    else:
-        draw.ellipse([x - y, x - y, x + y, x + y], fill=colour)
-
-    return img
-
-def cos(a, b):
-    return (a * b).sum(dim=-1)
-
-def compute_shape_color_sensitivity(
-    model: Adapter,
-    preprocess,
-    device: str,
-    repeats: int = 64,
-) -> dict[str, float]:
-    """
-    Uses 4 images repeated many times to get a estimate of how much
-    the representation changes when:
-      - shape changes (same color)
-      - color changes (same shape)
-
-    Returns mean cosine distances (1 - cosine similarity).
-    """
-
-    model.eval()
-    GREEN = (0, 255, 0)
-    RED = (255, 0, 0)
-
-    # Canonical images
-    GS = _make_shape_image(is_square=True, colour=GREEN)
-    GC = _make_shape_image(is_square=False, colour=GREEN)
-    RS = _make_shape_image(is_square=True, colour=RED)
-    RC = _make_shape_image(is_square=False, colour=RED)
-
-    imgs = [GS, GC, RS, RC] * repeats
-    batch = torch.stack([preprocess(im) for im in imgs]).to(device)
-
-    with torch.no_grad():
-        feats, _ = model(batch)
-        feats = feats / (feats.norm(dim=-1, keepdim=True) + 1e-12)
-
-    feats = feats.view(repeats, 4, -1)
-    GS_f, GC_f, RS_f, RC_f = feats[:, 0, :], feats[:, 1, :], feats[:, 2, :], feats[:, 3, :]
-
-    shape_sim = torch.cat([cos(GS_f, GC_f), cos(RS_f, RC_f)], dim=0)
-    color_sim = torch.cat([cos(GS_f, RS_f), cos(GC_f, RC_f)], dim=0)
-
-    shape_dist = (1.0 - shape_sim).mean().item()
-    color_dist = (1.0 - color_sim).mean().item()
-
-    return {
-        "shape_cosine_dist": shape_dist,
-        "color_cosine_dist": color_dist,
-        "shape_minus_color": shape_dist - color_dist,
-        "shape_over_color": shape_dist / (color_dist + 1e-8),
-    }
 
 def run_basic_experiment(cfg: ExperimentConfig):
     """
