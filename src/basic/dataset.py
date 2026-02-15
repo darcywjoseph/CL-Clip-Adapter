@@ -44,7 +44,7 @@ class ShapesAndColours(Dataset):
                 else:
                     colour = RED      
             elif self.task_id == 3:
-                colour = GREEN
+                colour = GREEN if np.random.rand() > 0.5 else RED
             else:
                 raise ValueError(f"Invalid task id: {self.task_id}")
 
